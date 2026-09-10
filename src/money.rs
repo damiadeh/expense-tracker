@@ -59,43 +59,39 @@ impl Money {
 
 /// Everything that can go wrong turning a string into a [`Money`].
 ///
-/// This is written out by hand — `Display` and `Error` implemented manually —
-/// so that Stage 2 can show you exactly what the `thiserror` derive macro
-/// generates on your behalf.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Stage 1 implemented `Display` and `Error` for this type by hand, in about
+/// twenty lines. `#[derive(Error)]` from the `thiserror` crate generates
+/// exactly those two impls from the `#[error("...")]` attributes below —
+/// the strings are format templates, and the fields are in scope inside them.
+///
+/// Note what `thiserror` is *not*: it is not a runtime dependency doing work
+/// while your program runs. It is a compile-time macro that writes ordinary
+/// Rust and then gets out of the way.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ParseMoneyError {
     /// The input was empty or only whitespace.
+    #[error("amount is empty")]
     Empty,
+
     /// The input contained something that is not a digit, sign, or separator.
+    ///
+    /// `{0}` refers to the first (and only) field of this tuple variant.
+    #[error("`{0}` is not a valid amount")]
     InvalidCharacter(String),
+
     /// There were zero, or more than two, digits after the decimal point.
     ///
     /// We reject `"1.234"` rather than rounding it. Silently turning a third
     /// decimal place into a rounding decision is how money quietly goes missing.
+    ///
+    /// `{found}` refers to the named field of this struct variant.
+    #[error("expected 1 or 2 digits after the decimal point, found {found}")]
     DecimalPlaces { found: usize },
+
     /// The amount does not fit in an `i64` cent count.
+    #[error("amount is too large")]
     Overflow,
 }
-
-impl fmt::Display for ParseMoneyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ParseMoneyError::Empty => write!(f, "amount is empty"),
-            ParseMoneyError::InvalidCharacter(input) => {
-                write!(f, "`{input}` is not a valid amount")
-            }
-            ParseMoneyError::DecimalPlaces { found } => write!(
-                f,
-                "expected 1 or 2 digits after the decimal point, found {found}"
-            ),
-            ParseMoneyError::Overflow => write!(f, "amount is too large"),
-        }
-    }
-}
-
-// Implementing `Error` is what lets this type be used with `?` in functions
-// returning `Box<dyn Error>`, and what `thiserror` derives for you in Stage 2.
-impl std::error::Error for ParseMoneyError {}
 
 impl FromStr for Money {
     type Err = ParseMoneyError;
