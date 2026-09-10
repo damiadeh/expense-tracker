@@ -12,3 +12,9 @@ name = "et"
 path = "src/main.rs"
 
 [dependencies]
+anyhow = "1.0.104"
+chrono = "0.4.45"
+clap = { version = "4.6.6", features = ["derive"] }
+directories = "6.0.0"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+thiserror = "2.0.20"
