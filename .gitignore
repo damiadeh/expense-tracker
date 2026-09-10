@@ -1,0 +1,10 @@
+# Build artifacts
+/target
+
+# Local databases
+*.db
+*.db-journal
+*.sqlite
+
+# macOS
+.DS_Store

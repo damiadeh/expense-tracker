@@ -1,0 +1,14 @@
+[package]
+name = "expense-tracker"
+version = "0.1.0"
+edition = "2024"
+description = "A command-line expense tracker backed by SQLite"
+license = "MIT"
+
+# The binary is named `et` for short invocations, while the package/library
+# keeps the descriptive name `expense_tracker`.
+[[bin]]
+name = "et"
+path = "src/main.rs"
+
+[dependencies]
