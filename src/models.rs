@@ -66,12 +66,7 @@ impl NewExpense {
     ///
     /// Takes `&str` for borrowed input and produces owned `String`s, because
     /// the struct outlives the command-line arguments it came from.
-    pub fn new(
-        amount: Money,
-        category: &str,
-        note: Option<&str>,
-        date: NaiveDate,
-    ) -> Result<Self> {
+    pub fn new(amount: Money, category: &str, note: Option<&str>, date: NaiveDate) -> Result<Self> {
         Ok(NewExpense {
             amount,
             category: normalize_category(category)?,
@@ -245,5 +240,244 @@ impl FromStr for Month {
         let month: u32 = month.parse().map_err(|_| invalid())?;
 
         Month::new(year, month).map_err(|_| invalid())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn date(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).expect("test date must be valid")
+    }
+
+    // --- categories --------------------------------------------------------
+
+    #[test]
+    fn category_is_trimmed_and_lowercased() {
+        assert_eq!(normalize_category("  Groceries  ").unwrap(), "groceries");
+        assert_eq!(normalize_category("COFFEE").unwrap(), "coffee");
+    }
+
+    #[test]
+    fn category_normalization_merges_casings() {
+        // The reason lowercasing happens at the boundary: these must not end
+        // up as three separate rows in a GROUP BY.
+        let variants = ["Groceries", "groceries", "GROCERIES"];
+        let normalized: Vec<String> = variants
+            .iter()
+            .map(|c| normalize_category(c).unwrap())
+            .collect();
+        assert!(normalized.iter().all(|c| c == "groceries"));
+    }
+
+    #[test]
+    fn category_rejects_empty() {
+        assert!(matches!(
+            normalize_category(""),
+            Err(AppError::InvalidCategory(_, _))
+        ));
+        assert!(matches!(
+            normalize_category("   "),
+            Err(AppError::InvalidCategory(_, _))
+        ));
+    }
+
+    #[test]
+    fn category_rejects_internal_whitespace() {
+        let err = normalize_category("home improvement").unwrap_err();
+        assert!(matches!(err, AppError::InvalidCategory(_, _)));
+        assert!(err.to_string().contains("single word"));
+    }
+
+    #[test]
+    fn category_accepts_hyphens_and_underscores() {
+        assert_eq!(
+            normalize_category("home-improvement").unwrap(),
+            "home-improvement"
+        );
+        assert_eq!(normalize_category("car_repair").unwrap(), "car_repair");
+    }
+
+    #[test]
+    fn category_length_is_counted_in_characters_not_bytes() {
+        // "é" is two bytes but one character. A `len()` check would reject
+        // this 32-character category as though it were 64 bytes long.
+        let accented = "é".repeat(MAX_CATEGORY_LEN);
+        assert!(accented.len() > MAX_CATEGORY_LEN);
+        assert!(normalize_category(&accented).is_ok());
+
+        let too_long = "a".repeat(MAX_CATEGORY_LEN + 1);
+        assert!(matches!(
+            normalize_category(&too_long),
+            Err(AppError::InvalidCategory(_, _))
+        ));
+    }
+
+    #[test]
+    fn category_error_quotes_the_original_input() {
+        // Not the trimmed version — the user should see what they typed.
+        let err = normalize_category("  Home Improvement  ").unwrap_err();
+        assert!(err.to_string().contains("Home Improvement"));
+    }
+
+    // --- notes -------------------------------------------------------------
+
+    #[test]
+    fn note_is_trimmed() {
+        assert_eq!(
+            normalize_note(Some("  Trader Joe's  ")),
+            Some("Trader Joe's".to_string())
+        );
+    }
+
+    #[test]
+    fn blank_note_becomes_none() {
+        // An empty string and an absent note mean the same thing, so they get
+        // the same representation. Otherwise `list` would print a stray blank.
+        assert_eq!(normalize_note(Some("   ")), None);
+        assert_eq!(normalize_note(Some("")), None);
+        assert_eq!(normalize_note(None), None);
+    }
+
+    // --- construction ------------------------------------------------------
+
+    #[test]
+    fn new_expense_normalizes_everything() {
+        let expense = NewExpense::new(
+            Money::from_cents(4250),
+            "  Groceries ",
+            Some("  Trader Joe's "),
+            date(2026, 9, 10),
+        )
+        .unwrap();
+
+        assert_eq!(expense.category, "groceries");
+        assert_eq!(expense.note.as_deref(), Some("Trader Joe's"));
+        assert_eq!(expense.amount, Money::from_cents(4250));
+    }
+
+    #[test]
+    fn new_expense_rejects_bad_category() {
+        let result = NewExpense::new(Money::from_cents(1), "", None, date(2026, 9, 10));
+        assert!(matches!(result, Err(AppError::InvalidCategory(_, _))));
+    }
+
+    #[test]
+    fn saved_as_carries_every_field_across() {
+        let new = NewExpense::new(
+            Money::from_cents(4250),
+            "groceries",
+            Some("Trader Joe's"),
+            date(2026, 9, 10),
+        )
+        .unwrap();
+        // Clone first, because `saved_as` consumes `self` — which is the point.
+        let expected = new.clone();
+        let saved = new.saved_as(17);
+
+        assert_eq!(saved.id, 17);
+        assert_eq!(saved.amount, expected.amount);
+        assert_eq!(saved.category, expected.category);
+        assert_eq!(saved.note, expected.note);
+        assert_eq!(saved.date, expected.date);
+    }
+
+    // --- dates -------------------------------------------------------------
+
+    #[test]
+    fn parses_iso_dates() {
+        assert_eq!(parse_date("2026-09-10").unwrap(), date(2026, 9, 10));
+        assert_eq!(parse_date("  2026-09-10  ").unwrap(), date(2026, 9, 10));
+    }
+
+    #[test]
+    fn rejects_impossible_dates() {
+        // chrono does the calendar work: there is no 30th of February.
+        assert!(matches!(
+            parse_date("2026-02-30"),
+            Err(AppError::InvalidDate(_))
+        ));
+        assert!(matches!(
+            parse_date("2026-13-01"),
+            Err(AppError::InvalidDate(_))
+        ));
+        assert!(matches!(
+            parse_date("10/09/2026"),
+            Err(AppError::InvalidDate(_))
+        ));
+    }
+
+    #[test]
+    fn leap_days_are_accepted_when_real() {
+        assert!(parse_date("2028-02-29").is_ok());
+        assert!(parse_date("2026-02-29").is_err());
+    }
+
+    // --- months ------------------------------------------------------------
+
+    #[test]
+    fn parses_months() {
+        let m: Month = "2026-09".parse().unwrap();
+        assert_eq!(m.year(), 2026);
+        assert_eq!(m.month(), 9);
+    }
+
+    #[test]
+    fn month_rejects_malformed_input() {
+        // Fixed widths: no guessing at what "2026-9" or "26-09" meant.
+        for bad in ["2026-9", "26-09", "2026", "2026-13", "2026-00", "banana"] {
+            assert!(
+                bad.parse::<Month>().is_err(),
+                "{bad} should not parse as a month"
+            );
+        }
+    }
+
+    #[test]
+    fn month_round_trips_through_display() {
+        for input in ["2026-09", "2026-01", "2026-12"] {
+            let parsed: Month = input.parse().unwrap();
+            assert_eq!(parsed.to_string(), input);
+        }
+    }
+
+    #[test]
+    fn month_like_prefix_matches_iso_dates() {
+        let september: Month = "2026-09".parse().unwrap();
+        assert_eq!(september.like_prefix(), "2026-09%");
+
+        // Zero-padded ISO text is what makes a plain string LIKE correct.
+        let prefix = september.like_prefix();
+        let stem = prefix.trim_end_matches('%');
+        assert!(date(2026, 9, 1).to_string().starts_with(stem));
+        assert!(date(2026, 9, 30).to_string().starts_with(stem));
+        assert!(!date(2026, 10, 1).to_string().starts_with(stem));
+    }
+
+    #[test]
+    fn month_containing_a_date() {
+        assert_eq!(
+            Month::containing(date(2026, 9, 10)),
+            Month::new(2026, 9).unwrap()
+        );
+    }
+
+    #[test]
+    fn months_sort_chronologically() {
+        // Derived `Ord` compares year first, then month, because that is the
+        // field order in the struct. Swapping the fields would silently break
+        // this — worth knowing before you reorder a struct that derives Ord.
+        let mut months: Vec<Month> = ["2026-01", "2025-12", "2026-09"]
+            .iter()
+            .map(|m| m.parse().unwrap())
+            .collect();
+        months.sort();
+        let sorted: Vec<String> = months.iter().map(Month::to_string).collect();
+        assert_eq!(sorted, ["2025-12", "2026-01", "2026-09"]);
     }
 }
