@@ -3,6 +3,7 @@
 //! The binary in `src/main.rs` is deliberately thin — all the real logic lives
 //! here so that integration tests in `tests/` can exercise it directly.
 
+pub mod db;
 pub mod error;
 pub mod models;
 pub mod money;
