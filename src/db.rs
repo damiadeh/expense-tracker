@@ -37,6 +37,12 @@ const MIGRATIONS: &[&str] = &[
     CREATE TABLE expenses (
         -- `INTEGER PRIMARY KEY` is special in SQLite: it aliases the internal
         -- rowid, so it auto-assigns and needs no AUTOINCREMENT keyword.
+        --
+        -- One consequence: ids are *reused* after a delete. Adding
+        -- AUTOINCREMENT would stop that, at the cost of ever-growing numbers
+        -- in a tool whose ids exist to be typed by hand. The `delete` command
+        -- prints what it is about to remove and asks for confirmation, which
+        -- is the real protection against acting on a stale id.
         id           INTEGER PRIMARY KEY,
 
         -- Cents, never a float. `REAL` here would reintroduce exactly the
@@ -675,6 +681,22 @@ mod tests {
         // The affected-row count is the only signal that anything went wrong.
         let conn = seeded();
         assert!(matches!(delete(&conn, 99), Err(AppError::NotFound(99))));
+    }
+
+    #[test]
+    fn ids_are_reused_after_a_delete() {
+        // Deliberate, and a consequence of INTEGER PRIMARY KEY without
+        // AUTOINCREMENT. Pinned here so that changing it is a decision rather
+        // than an accident: an id noted from an earlier `list` can refer to a
+        // different expense later, which is why `delete` confirms by showing
+        // the row rather than trusting the number.
+        let conn = open_in_memory().unwrap();
+        let first = insert(&conn, &new_expense(100, "tea", None, date(2026, 9, 1))).unwrap();
+        delete(&conn, first).unwrap();
+
+        let second = insert(&conn, &new_expense(200, "tea", None, date(2026, 9, 2))).unwrap();
+        assert_eq!(second, first, "the id should be handed out again");
+        assert_eq!(get(&conn, second).unwrap().amount, Money::from_cents(200));
     }
 
     #[test]

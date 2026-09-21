@@ -82,7 +82,19 @@ fn run(cli: &Cli) -> Result<()> {
                 emit(&commands::summary::render(&totals))?;
             }
         }
-        Command::Delete { .. } => emit("delete: not implemented yet (stage 10)")?,
+        Command::Delete { id, yes } => {
+            // Look it up first, so a wrong id fails before the user is asked
+            // to confirm anything.
+            let expense = commands::delete::find(&conn, *id)?;
+
+            if !yes && !confirm(&commands::delete::prompt(&expense))? {
+                emit("Cancelled.")?;
+                return Ok(());
+            }
+
+            commands::delete::run(&conn, *id)?;
+            emit(&commands::delete::confirmation(&expense))?;
+        }
     }
 
     Ok(())
@@ -106,6 +118,18 @@ fn emit(text: &str) -> Result<()> {
     writeln!(handle, "{text}")?;
     handle.flush()?;
     Ok(())
+}
+
+/// Asks the user a yes/no question on the terminal.
+///
+/// The prompt goes to **stderr**, not stdout. Anything a user might pipe into
+/// another program belongs on stdout; a question belongs on stderr, so that
+/// `et delete 1 > log.txt` still shows the question on screen.
+fn confirm(prompt: &str) -> Result<bool> {
+    let stdin = io::stdin();
+    let mut input = stdin.lock();
+    let mut output = io::stderr();
+    commands::delete::ask(prompt, &mut input, &mut output)
 }
 
 /// Whether an error is just a reader that stopped listening.

@@ -37,17 +37,7 @@ pub fn run(
 /// Separate from [`run`] so it can be tested against an `Expense` built by
 /// hand, with no database and no captured output.
 pub fn confirmation(expense: &Expense) -> String {
-    let mut line = format!(
-        "Added #{}: {} {}",
-        expense.id, expense.amount, expense.category
-    );
-
-    if let Some(note) = &expense.note {
-        line.push_str(&format!(" — {note}"));
-    }
-
-    line.push_str(&format!(" ({})", expense.date));
-    line
+    format!("Added {}", super::describe(expense))
 }
 
 #[cfg(test)]
