@@ -111,6 +111,14 @@ pub enum Command {
         /// Which month, as YYYY-MM [default: this month]
         #[arg(short, long)]
         month: Option<Month>,
+
+        // Without this, defaulting `--month` to the current month would make
+        // all-time totals unreachable. `conflicts_with` makes asking for both
+        // a usage error rather than a silent precedence rule the user has to
+        // guess at.
+        /// Every month, not just one
+        #[arg(short, long, conflicts_with = "month")]
+        all: bool,
     },
 
     /// Delete an expense by id.
@@ -219,7 +227,9 @@ mod tests {
 
         let cli = parse(&["et", "summary", "--month", "2026-09"]).unwrap();
         match cli.command {
-            Command::Summary { month } => assert_eq!(month, Some("2026-09".parse().unwrap())),
+            Command::Summary { month, .. } => {
+                assert_eq!(month, Some("2026-09".parse().unwrap()))
+            }
             other => panic!("expected Summary, got {other:?}"),
         }
     }
@@ -314,6 +324,12 @@ mod tests {
             clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
                 | clap::error::ErrorKind::MissingSubcommand
         ));
+    }
+
+    #[test]
+    fn summary_month_and_all_are_mutually_exclusive() {
+        let err = parse(&["et", "summary", "--month", "2026-09", "--all"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 
     #[test]

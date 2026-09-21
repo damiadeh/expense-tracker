@@ -73,7 +73,15 @@ fn run(cli: &Cli) -> Result<()> {
             }
         }
 
-        Command::Summary { .. } => emit("summary: not implemented yet (stage 9)")?,
+        Command::Summary { month, all } => {
+            let period = commands::summary::Period::resolve(*month, *all);
+            let totals = commands::summary::run(&conn, period)?;
+            if totals.is_empty() {
+                emit(&commands::summary::empty_message(period))?;
+            } else {
+                emit(&commands::summary::render(&totals))?;
+            }
+        }
         Command::Delete { .. } => emit("delete: not implemented yet (stage 10)")?,
     }
 
