@@ -4,6 +4,7 @@
 //! here so that integration tests in `tests/` can exercise it directly.
 
 pub mod cli;
+pub mod commands;
 pub mod db;
 pub mod error;
 pub mod models;

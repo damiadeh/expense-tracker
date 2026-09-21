@@ -63,6 +63,12 @@ impl Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Record a new expense.
+    //
+    // Without `allow_negative_numbers`, clap reads `-15.00` as a flag and
+    // rejects it: `error: unexpected argument '-1' found`. Refunds are a real
+    // use for this tool, so negative amounts have to be typeable without
+    // making the user remember a `--` separator.
+    #[command(allow_negative_numbers = true)]
     Add {
         // Parsed by the `FromStr` impl on `Money` from Stage 1. clap finds it
         // automatically, so "banana" is rejected here, with our own error
@@ -216,6 +222,25 @@ mod tests {
             Command::Summary { month } => assert_eq!(month, Some("2026-09".parse().unwrap())),
             other => panic!("expected Summary, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn negative_amounts_are_typeable_without_a_separator() {
+        // Refunds. Without `allow_negative_numbers` on the Add subcommand,
+        // clap reads `-15.00` as an unknown flag.
+        let cli = parse(&["et", "add", "-15.00", "-c", "groceries"]).unwrap();
+        match cli.command {
+            Command::Add { amount, .. } => assert_eq!(amount, Money::from_cents(-1500)),
+            other => panic!("expected Add, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn allowing_negative_numbers_does_not_swallow_typos() {
+        // `allow_negative_numbers` must not turn every bad value into a
+        // positional argument — "banana" still has to be rejected.
+        let err = parse(&["et", "add", "banana", "-c", "groceries"]).unwrap_err();
+        assert!(err.to_string().contains("is not a valid amount"), "{err}");
     }
 
     #[test]
